@@ -68,7 +68,7 @@ func getCaptchaData(w http.ResponseWriter, r *http.Request) {
 	capt.SetBackground(background)
 	capt.SetFont([]string{
 		// "./resources/fonts/fzshengsksjw_cu.ttf",
-		// "./resources/fonts/fzssksxl.ttf",
+		"./resources/fonts/fzssksxl.ttf",
 		"./resources/fonts/ChenYuluoyan-Thin-Monospaced.ttf",
 	})
 
