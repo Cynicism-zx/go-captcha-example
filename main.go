@@ -3,8 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/wenlng/go-captcha/captcha"
-	"go-captcha-example/tools"
 	"html/template"
 	"io"
 	"io/ioutil"
@@ -14,6 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go-captcha-example/tools"
+
+	"github.com/wenlng/go-captcha/captcha"
 )
 
 func main() {
@@ -27,13 +29,13 @@ func main() {
 	// 这是静态资源----Vue版本
 	static := getPWD() + "/static/vue/"
 	fsh := http.FileServer(http.Dir(static))
-	http.Handle("/go_captcha_demo/", http.StripPrefix("/go_captcha_demo/",fsh))
+	http.Handle("/go_captcha_demo/", http.StripPrefix("/go_captcha_demo/", fsh))
 
 	// 临时定时清空缓存，由于是demo即在程序内部实现
 	runTimedTask()
 
-	log.Println("ListenAndServe 0.0.0.0:9001")
-	err := http.ListenAndServe(":9001", nil)
+	log.Println("ListenAndServe 0.0.0.0:9111")
+	err := http.ListenAndServe(":9111", nil)
 	if err != nil {
 		log.Fatal("ListenAndServe err: ", err)
 	}
@@ -59,11 +61,13 @@ func demo(w http.ResponseWriter, r *http.Request) {
  */
 func getCaptchaData(w http.ResponseWriter, r *http.Request) {
 	capt := captcha.GetCaptcha()
+	background := []string{"./dog.jpg", "tou.jpg"}
+	capt.SetBackground(background)
 
 	dots, b64, tb64, key, err := capt.Generate()
 	if err != nil {
 		bt, _ := json.Marshal(map[string]interface{}{
-			"code": 1,
+			"code":    1,
 			"message": "GenCaptcha err",
 		})
 		_, _ = fmt.Fprintf(w, string(bt))
@@ -71,10 +75,10 @@ func getCaptchaData(w http.ResponseWriter, r *http.Request) {
 	}
 	writeCache(dots, key)
 	bt, _ := json.Marshal(map[string]interface{}{
-		"code": 0,
+		"code":         0,
 		"image_base64": b64,
 		"thumb_base64": tb64,
-		"captcha_key": key,
+		"captcha_key":  key,
 	})
 	_, _ = fmt.Fprintf(w, string(bt))
 }
@@ -120,10 +124,10 @@ func checkCaptcha(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chkRet := false
-	if (len(dct)*2) == len(src) {
+	if (len(dct) * 2) == len(src) {
 		for i, dot := range dct {
 			j := i * 2
-			k := i * 2 + 1
+			k := i*2 + 1
 			sx, _ := strconv.ParseFloat(fmt.Sprintf("%v", src[j]), 64)
 			sy, _ := strconv.ParseFloat(fmt.Sprintf("%v", src[k]), 64)
 
@@ -162,7 +166,11 @@ func writeCache(v interface{}, file string) {
 	cacheDir := getCacheDir() + month + "/"
 	_ = os.MkdirAll(cacheDir, 0660)
 	file = cacheDir + file + ".json"
-	logFile, _ := os.OpenFile(file, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0644)
+	logFile, err := os.OpenFile(file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0777)
+	if err != nil {
+		fmt.Println("open file err:", err)
+		return
+	}
 	defer logFile.Close()
 	// 检查过期文件
 	//checkCacheOvertimeFile()
@@ -203,19 +211,18 @@ func readCache(file string) string {
  */
 func checkDist(sx, sy, dx, dy, width, height int64) bool {
 	return sx >= dx &&
-		sx <= dx + width &&
+		sx <= dx+width &&
 		sy <= dy &&
-		sy >= dy - height
+		sy >= dy-height
 }
 
 /**
  * @Description: Get cache dir path
  * @return string
  */
-func getCacheDir() string  {
-	return getPWD() + "/.cache/"
+func getCacheDir() string {
+	return getPWD() + "/file/"
 }
-
 
 /**
  * @Description: Get pwd dir path
@@ -245,7 +252,7 @@ func checkFileIsExist(filename string) bool {
 /**
  * @Description: 启动定时任务, 5分钟执行一次
  */
-func runTimedTask()  {
+func runTimedTask() {
 	ticker := time.NewTicker(time.Minute * 5)
 	go func() {
 		for range ticker.C {
@@ -257,11 +264,11 @@ func runTimedTask()  {
 /**
  * @Description: 检查缓存超时文件， 30分钟
  */
-func checkCacheOvertimeFile()  {
+func checkCacheOvertimeFile() {
 	files, files1, _ := listDir(getCacheDir())
 	for _, table := range files1 {
-		temp,_,_ := listDir(table)
-		for _,temp1 := range temp{
+		temp, _, _ := listDir(table)
+		for _, temp1 := range temp {
 			files = append(files, temp1)
 		}
 	}
@@ -282,10 +289,10 @@ func checkCacheOvertimeFile()  {
  * @return files1
  * @return err
  */
-func listDir(dirPth string) (files []string,files1 []string, err error) {
+func listDir(dirPth string) (files []string, files1 []string, err error) {
 	dir, err := ioutil.ReadDir(dirPth)
 	if err != nil {
-		return nil,nil, err
+		return nil, nil, err
 	}
 
 	PthSep := string(os.PathSeparator)
@@ -299,4 +306,3 @@ func listDir(dirPth string) (files []string,files1 []string, err error) {
 	}
 	return files, files1, nil
 }
-
