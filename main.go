@@ -61,11 +61,20 @@ func demo(w http.ResponseWriter, r *http.Request) {
  */
 func getCaptchaData(w http.ResponseWriter, r *http.Request) {
 	capt := captcha.GetCaptcha()
-	background := []string{"./dog.jpg", "tou.jpg"}
+	background := []string{
+		"./resources/images/dog.jpg",
+		"./resources/images/tou.jpg",
+	}
 	capt.SetBackground(background)
+	capt.SetFont([]string{
+		// "./resources/fonts/fzshengsksjw_cu.ttf",
+		// "./resources/fonts/fzssksxl.ttf",
+		"./resources/fonts/ChenYuluoyan-Thin-Monospaced.ttf",
+	})
 
 	dots, b64, tb64, key, err := capt.Generate()
 	if err != nil {
+		log.Println(err)
 		bt, _ := json.Marshal(map[string]interface{}{
 			"code":    1,
 			"message": "GenCaptcha err",
@@ -164,7 +173,7 @@ func writeCache(v interface{}, file string) {
 	bt, _ := json.Marshal(v)
 	month := time.Now().Month().String()
 	cacheDir := getCacheDir() + month + "/"
-	_ = os.MkdirAll(cacheDir, 0660)
+	_ = os.MkdirAll(cacheDir, 0777)
 	file = cacheDir + file + ".json"
 	logFile, err := os.OpenFile(file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0777)
 	if err != nil {
@@ -173,7 +182,7 @@ func writeCache(v interface{}, file string) {
 	}
 	defer logFile.Close()
 	// 检查过期文件
-	//checkCacheOvertimeFile()
+	// checkCacheOvertimeFile()
 	_, _ = io.WriteString(logFile, string(bt))
 }
 
