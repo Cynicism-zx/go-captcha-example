@@ -1,10 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/allegro/bigcache/v3"
 	"html/template"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -18,7 +19,11 @@ import (
 	"github.com/wenlng/go-captcha/captcha"
 )
 
+var cache *bigcache.BigCache
+
 func main() {
+	var err error
+	cache, err = bigcache.New(context.Background(), bigcache.DefaultConfig(10*time.Minute))
 	// Example: Get captcha data
 	http.HandleFunc("/api/go_captcha_data", getCaptchaData)
 	// Example: Post check data
@@ -35,8 +40,7 @@ func main() {
 	runTimedTask()
 
 	log.Println("ListenAndServe 0.0.0.0:9111")
-	err := http.ListenAndServe(":9111", nil)
-	if err != nil {
+	if err = http.ListenAndServe(":9111", nil); err != nil {
 		log.Fatal("ListenAndServe err: ", err)
 	}
 }
@@ -171,19 +175,7 @@ func checkCaptcha(w http.ResponseWriter, r *http.Request) {
  */
 func writeCache(v interface{}, file string) {
 	bt, _ := json.Marshal(v)
-	month := time.Now().Month().String()
-	cacheDir := getCacheDir() + month + "/"
-	_ = os.MkdirAll(cacheDir, 0777)
-	file = cacheDir + file + ".json"
-	logFile, err := os.OpenFile(file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0777)
-	if err != nil {
-		fmt.Println("open file err:", err)
-		return
-	}
-	defer logFile.Close()
-	// 检查过期文件
-	// checkCacheOvertimeFile()
-	_, _ = io.WriteString(logFile, string(bt))
+	cache.Set(file, bt)
 }
 
 /**
@@ -192,20 +184,11 @@ func writeCache(v interface{}, file string) {
  * @return string
  */
 func readCache(file string) string {
-	month := time.Now().Month().String()
-	cacheDir := getCacheDir() + month + "/"
-	file = cacheDir + file + ".json"
-
-	if !checkFileIsExist(file) {
+	by, err := cache.Get(file)
+	if err != nil {
 		return ""
 	}
-
-	bt, err := ioutil.ReadFile(file)
-	err = os.Remove(file)
-	if err == nil {
-		return string(bt)
-	}
-	return ""
+	return string(by)
 }
 
 /**
