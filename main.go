@@ -5,25 +5,37 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/allegro/bigcache/v3"
+	"gitlab.test.com/common/log"
 	"html/template"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
-	"go-captcha-example/tools"
-
-	"github.com/wenlng/go-captcha/captcha"
+	"gitlab.test.com/video-platform/common/captcha"
 )
 
-var cache *bigcache.BigCache
+var (
+	cache *bigcache.BigCache
+	capt  *captcha.GenCaptcha
+)
 
 func main() {
 	var err error
 	cache, err = bigcache.New(context.Background(), bigcache.DefaultConfig(10*time.Minute))
+	capt = captcha.New(
+		captcha.WithBackground([]string{
+			"./resources/images/dog.jpg",
+			"./resources/images/tou.jpg",
+			"./resources/images/gou.jpeg",
+		}),
+		captcha.WithFonts([]string{
+			// "./resources/fonts/fzshengsksjw_cu.ttf",
+			"./resources/fonts/fzssksxl.ttf",
+			// "./resources/fonts/ChenYuluoyan-Thin-Monospaced.ttf",
+		}),
+		captcha.WithImageFontDistort(5),
+	)
 	// Example: Get captcha data
 	http.HandleFunc("/api/go_captcha_data", getCaptchaData)
 	// Example: Post check data
@@ -38,10 +50,10 @@ func main() {
 
 	// 临时定时清空缓存，由于是demo即在程序内部实现
 	runTimedTask()
-
-	log.Println("ListenAndServe 0.0.0.0:9111")
+	ctx := context.Background()
+	log.Info(ctx, "ListenAndServe", "0.0.0.0:9111")
 	if err = http.ListenAndServe(":9111", nil); err != nil {
-		log.Fatal("ListenAndServe err: ", err)
+		log.Warn(ctx, "ListenAndServe err: ", err)
 	}
 }
 
@@ -64,21 +76,24 @@ func demo(w http.ResponseWriter, r *http.Request) {
  * @param r
  */
 func getCaptchaData(w http.ResponseWriter, r *http.Request) {
-	capt := captcha.GetCaptcha()
-	background := []string{
-		"./resources/images/dog.jpg",
-		"./resources/images/tou.jpg",
-	}
-	capt.SetBackground(background)
-	capt.SetFont([]string{
-		// "./resources/fonts/fzshengsksjw_cu.ttf",
-		"./resources/fonts/fzssksxl.ttf",
-		"./resources/fonts/ChenYuluoyan-Thin-Monospaced.ttf",
-	})
-
-	dots, b64, tb64, key, err := capt.Generate()
+	// capt := captcha.GetCaptcha()
+	// background := []string{
+	// 	"./resources/images/dog.jpg",
+	// 	"./resources/images/tou.jpg",
+	// 	"./resources/images/gou.jpeg",
+	// }
+	// capt.SetBackground(background)
+	// capt.SetFont([]string{
+	// 	// "./resources/fonts/fzshengsksjw_cu.ttf",
+	// 	"./resources/fonts/fzssksxl.ttf",
+	// 	// "./resources/fonts/ChenYuluoyan-Thin-Monospaced.ttf",
+	// })
+	// capt.SetImageFontDistort(captcha.DistortLevel5)
+	//
+	// dots, b64, tb64, key, err := capt.Generate()
+	res, err := capt.GenerateCaptcha(r.Context())
 	if err != nil {
-		log.Println(err)
+		log.Warn(context.Background(), "GenCaptcha err: ", err)
 		bt, _ := json.Marshal(map[string]interface{}{
 			"code":    1,
 			"message": "GenCaptcha err",
@@ -86,12 +101,11 @@ func getCaptchaData(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, string(bt))
 		return
 	}
-	writeCache(dots, key)
 	bt, _ := json.Marshal(map[string]interface{}{
 		"code":         0,
-		"image_base64": b64,
-		"thumb_base64": tb64,
-		"captcha_key":  key,
+		"image_base64": res.ImageBase64,
+		"thumb_base64": res.ThumbBase64,
+		"captcha_key":  res.Key,
 	})
 	_, _ = fmt.Fprintf(w, string(bt))
 }
@@ -115,52 +129,54 @@ func checkCaptcha(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cacheData := readCache(key)
-	if cacheData == "" {
-		bt, _ := json.Marshal(map[string]interface{}{
-			"code":    code,
-			"message": "illegal key",
-		})
-		_, _ = fmt.Fprintf(w, string(bt))
-		return
-	}
-	src := strings.Split(dots, ",")
-
-	var dct map[int]captcha.CharDot
-	if err := json.Unmarshal([]byte(cacheData), &dct); err != nil {
-		bt, _ := json.Marshal(map[string]interface{}{
-			"code":    code,
-			"message": "illegal key",
-		})
-		_, _ = fmt.Fprintf(w, string(bt))
-		return
-	}
-
-	chkRet := false
-	if (len(dct) * 2) == len(src) {
-		for i, dot := range dct {
-			j := i * 2
-			k := i*2 + 1
-			sx, _ := strconv.ParseFloat(fmt.Sprintf("%v", src[j]), 64)
-			sy, _ := strconv.ParseFloat(fmt.Sprintf("%v", src[k]), 64)
-
-			// 检测点位置
-			// chkRet = captcha.CheckPointDist(int64(sx), int64(sy), int64(dot.Dx), int64(dot.Dy), int64(dot.Width), int64(dot.Height))
-
-			// 校验点的位置,在原有的区域上添加额外边距进行扩张计算区域,不推荐设置过大的padding
-			// 例如：文本的宽和高为30，校验范围x为10-40，y为15-45，此时扩充5像素后校验范围宽和高为40，则校验范围x为5-45，位置y为10-50
-			chkRet = captcha.CheckPointDistWithPadding(int64(sx), int64(sy), int64(dot.Dx), int64(dot.Dy), int64(dot.Width), int64(dot.Height), 5)
-			if !chkRet {
-				break
-			}
-		}
-	}
-
-	if chkRet {
-		// 通过校验
+	// cacheData := readCache(key)
+	// if cacheData == "" {
+	// 	bt, _ := json.Marshal(map[string]interface{}{
+	// 		"code":    code,
+	// 		"message": "illegal key",
+	// 	})
+	// 	_, _ = fmt.Fprintf(w, string(bt))
+	// 	return
+	// }
+	// src := strings.Split(dots, ",")
+	//
+	// var dct map[int]tools.CharDot
+	// if err := json.Unmarshal([]byte(cacheData), &dct); err != nil {
+	// 	bt, _ := json.Marshal(map[string]interface{}{
+	// 		"code":    code,
+	// 		"message": "illegal key",
+	// 	})
+	// 	_, _ = fmt.Fprintf(w, string(bt))
+	// 	return
+	// }
+	//
+	// chkRet := false
+	// if (len(dct) * 2) == len(src) {
+	// 	for i, dot := range dct {
+	// 		j := i * 2
+	// 		k := i*2 + 1
+	// 		sx, _ := strconv.ParseFloat(fmt.Sprintf("%v", src[j]), 64)
+	// 		sy, _ := strconv.ParseFloat(fmt.Sprintf("%v", src[k]), 64)
+	//
+	// 		// 检测点位置
+	// 		// chkRet = captcha.CheckPointDist(int64(sx), int64(sy), int64(dot.Dx), int64(dot.Dy), int64(dot.Width), int64(dot.Height))
+	//
+	// 		// 校验点的位置,在原有的区域上添加额外边距进行扩张计算区域,不推荐设置过大的padding
+	// 		// 例如：文本的宽和高为30，校验范围x为10-40，y为15-45，此时扩充5像素后校验范围宽和高为40，则校验范围x为5-45，位置y为10-50
+	// 		chkRet = tools.CheckPointDistWithPadding(int64(sx), int64(sy), int64(dot.Dx), int64(dot.Dy), int64(dot.Width), int64(dot.Height), 5)
+	// 		if !chkRet {
+	// 			break
+	// 		}
+	// 	}
+	// }
+	//
+	// if chkRet {
+	// 	// 通过校验
+	// 	code = 0
+	// }
+	if capt.VerifyCaptcha(r.Context(), dots, key) {
 		code = 0
 	}
-
 	bt, _ := json.Marshal(map[string]interface{}{
 		"code": code,
 	})
@@ -266,7 +282,11 @@ func checkCacheOvertimeFile() {
 	}
 
 	for _, file := range files {
-		t := tools.GetFileCreateTime(file)
+		f, err := os.Stat(file)
+		if err != nil {
+			continue
+		}
+		t := f.ModTime().Unix()
 		ex := time.Now().Unix() - t
 		if ex > (60 * 30) {
 			_ = os.Remove(file)
