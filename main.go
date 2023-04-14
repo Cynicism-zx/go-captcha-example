@@ -24,17 +24,7 @@ func main() {
 	var err error
 	cache, err = bigcache.New(context.Background(), bigcache.DefaultConfig(10*time.Minute))
 	capt = captcha.New(
-		captcha.WithBackground([]string{
-			"./resources/images/dog.jpg",
-			"./resources/images/tou.jpg",
-			"./resources/images/gou.jpeg",
-		}),
-		captcha.WithFonts([]string{
-			// "./resources/fonts/fzshengsksjw_cu.ttf",
-			"./resources/fonts/fzssksxl.ttf",
-			// "./resources/fonts/ChenYuluoyan-Thin-Monospaced.ttf",
-		}),
-		captcha.WithImageFontDistort(5),
+		captcha.Opt.WithImageFontDistort2(),
 	)
 	// Example: Get captcha data
 	http.HandleFunc("/api/go_captcha_data", getCaptchaData)
@@ -49,7 +39,7 @@ func main() {
 	http.Handle("/go_captcha_demo/", http.StripPrefix("/go_captcha_demo/", fsh))
 
 	// 临时定时清空缓存，由于是demo即在程序内部实现
-	runTimedTask()
+	// runTimedTask()
 	ctx := context.Background()
 	log.Info(ctx, "ListenAndServe", "0.0.0.0:9111")
 	if err = http.ListenAndServe(":9111", nil); err != nil {
@@ -119,6 +109,7 @@ func checkCaptcha(w http.ResponseWriter, r *http.Request) {
 	code := 1
 	_ = r.ParseForm()
 	dots := r.Form.Get("dots")
+	fmt.Println("dots: ", dots)
 	key := r.Form.Get("key")
 	if dots == "" || key == "" {
 		bt, _ := json.Marshal(map[string]interface{}{
